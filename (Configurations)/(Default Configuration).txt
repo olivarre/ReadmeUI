@@ -1,0 +1,40 @@
+##Hotfix Release Date## December 2015
+##Product Names and Versions## Company Product x.x.x.x
+##Customer Company Name## Sample Customer
+##Fix Request ID## FR 111111
+##Fix Request Title## Sample Title 
+##APAR ID##
+##APAR Title##
+##PMR ID## 
+##PMR Title## 
+##Defect ID## 
+##Defect Title## 
+##Problems Addressed By This Hotfix##
+	Problem description.
+##How This Hotfix Addresses the Problems##
+    Problem solution.
+##Pre-Deployment Instructions##
+	[None]
+##Post-Deployment Instructions##
+	[None]
+##Files Included In This Hotfix##
+    File1
+    File2
+
+##File Modifications In This Hotfix##
+	[None]
+	[None]
+##Internal Support Notes##
+	[None]
+##Confidential Support Notes##
+	These are not shown in the readme, only in this configuration file.
+##Development - Developer Name## Roberto Olivares
+##Development - Perforce Workspace Name##
+##Development - Hotfix Base Branches and Changelists## 
+##Development - Hotfix Specific Changelists##
+##Development - Related Changelists##
+	N/A
+##Testing - Tested By## 
+	Roberto Olivares
+##Testing - Testing Date## December 2015
+##Testing - Tests Performed##
