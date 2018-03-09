@@ -397,7 +397,7 @@ public class PublishHotfixTaskSamplePlugin implements IRunnableWithProgress {
 	}
 
 	private void showException(String title, Exception e) {
-		ReadmeUI.showException(title, e);
+		ReadmeUI.showErrorDialog(title, e);
 	}
 
 /* ====================================================================================================================================

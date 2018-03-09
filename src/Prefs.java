@@ -3,12 +3,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import org.eclipse.core.runtime.Path;
 import org.eclipse.swt.SWT;
 
 /** 
@@ -168,7 +165,7 @@ public class Prefs {
 	@SuppressWarnings("rawtypes")
 	public static void save() {
 		try{
-			// fill hashmap
+			// sneakily fill hashmap with all the property values from our preferences object using reflection API
 			hashmap.clear();
 			Class noparams[] = {};
 			for (Method method : Prefs.class.getDeclaredMethods()) {
@@ -179,15 +176,15 @@ public class Prefs {
 				}
 			}
 			
-			
 			// Set write permissions on preferences file in case we've downloaded it from source control as readonly
 			if (Utils.fileExists(ReadmeUI.preferencesFilePath))
 				Utils.setFileReadOnlyFlag(ReadmeUI.preferencesFilePath, false); 
 			
-			// Serialize hashmap
+			// Serialize hashmap to preferences file
 			Utils.writeObjectToFile(hashmap, ReadmeUI.preferencesFilePath);
+			
 		}catch(Exception ex){
-			ReadmeUI.showException("Error writing preferences file:\n" + ReadmeUI.preferencesFilePath, ex);
+			ReadmeUI.showErrorDialog("Error writing preferences file:\n" + ReadmeUI.preferencesFilePath, ex);
 		}
 	}
 	
@@ -211,7 +208,7 @@ public class Prefs {
 			return true;
 			
 		} catch(Exception e){
-			ReadmeUI.showException("Exception reading/setting property:  " + propertyName + " from:\n" + ReadmeUI.preferencesFilePath, e);
+			ReadmeUI.showErrorDialog("Exception reading/setting property:  " + propertyName + " from:\n" + ReadmeUI.preferencesFilePath, e);
 			return false;
 		}		
 	}

@@ -237,9 +237,7 @@ public class ReadmeGenerator {
 			println("'" + token_key + "' " + arrow.substring(0, arrowSize) + " '" + token_value + "'");
 			//String token_pattern = Pattern.quote(token_key);
 			//String result2 = result.replaceAll(token_pattern, token_value);
-			String before = result;
 			result = replaceAll(result, token_key, token_value);
-			before = before;
 		}
 
 		// Remove tabs

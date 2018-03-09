@@ -82,6 +82,11 @@ import org.eclipse.swt.widgets.Text;
  * Defects To Fix:
  * ================================================================
  *  Smooth the scrolling on the FileExpando composite via setRedraw=false/true
+ *  Move preferences from expando to its own dialog
+ *  Add preferences for hotfix publishing, 7-zip location, etc.
+ *  Fix directory update sometimes not showing files on open directory
+ *  Fix sorting to always show parenthesis at top
+ *  Add sorting toggle between date / name / asc / desc
  *  
  *  Add File Selector and Logging selector dialog.
  *  Change directory for save as based on which type of file it is.
@@ -164,6 +169,8 @@ import org.eclipse.swt.widgets.Text;
 @SuppressWarnings("unused")
 public class ReadmeUI {
 
+	private static final String APPLICATION_TITLE = "Readme Generator";
+	
 	public static Shell shell = new Shell();
 	public static Display display = shell.getDisplay();
 	public static Utils utils = new Utils(shell);
@@ -240,7 +247,9 @@ public class ReadmeUI {
 	static String templateSubdir = "(Templates)";
 	static String configSubdir = "(Configurations)";
 	static String outputSubdir = "(Output)";
-
+	static String hotfixSubdir = "(Hotfixes)";
+	
+	public static final String DEFAULT_PREFERENCES_FILENAME = ".readmeui.preferences";
 	static String defaultConfigFilename = "(Default Configuration).txt";
 	static String defaultTemplateFilename = "(Default Template).txt";
 		
@@ -272,11 +281,15 @@ public class ReadmeUI {
 			// Locate preferences file in same dir as this .class file
 			binDirectory = ReadmeUI.class.getResource(".").getPath().replaceAll("/", "\\\\").replaceAll("\\\\$","").replaceAll("%20", " ").substring(1);
 			String classParentDirectory = binDirectory.replaceAll("(?i)\\\\Bin", "");;
-			String[] directoriesToSearch = {classParentDirectory, System.getProperty("user.dir"), "C:\\Tools\\ReadmeUI"};
+			
+			// Directories to search for preferences file path in
+			String[] directoriesToSearch = {classParentDirectory, System.getProperty("user.dir")};
+			
+			// Standard subdirectories where we expect our templates, configurations, output, and hotfix files
 			String[] standardSubdirectories = {templateSubdir, configSubdir, outputSubdir};
 			
 			// Search for a preferences file and a suitable default directory (that contains the configuration/template/output subdirs)
-			preferencesFilePath = Utils.fileExistsIn(".readmeui.preferences", directoriesToSearch);
+			preferencesFilePath = Utils.fileExistsIn(DEFAULT_PREFERENCES_FILENAME, directoriesToSearch);
 			defaultDirectory = Utils.filesAllExistIn(standardSubdirectories, directoriesToSearch);
 
 			if (defaultDirectory == null) {
@@ -288,11 +301,18 @@ public class ReadmeUI {
 			createUI();
 
 			// Load any saved preferences
-			if (preferencesFilePath != null)
-				Prefs.load(preferencesFilePath);			// from preference file
-			else 
-				Prefs.setDirectory(defaultDirectory);		// prefs file missing, prompt for a directory
+			if (preferencesFilePath != null) {
+				// from existing preference file
+				Prefs.load(preferencesFilePath);
+			} else {
+				// prefs file missing, use the default directory going forward
+				Prefs.setDirectory(defaultDirectory);
+				Prefs.setHotfixDirectory(path(defaultDirectory, hotfixSubdir));
 				
+				// this is where we'll save the preferences when we exit
+				preferencesFilePath = path(defaultDirectory, DEFAULT_PREFERENCES_FILENAME); 
+			}
+			
 			// Configure the UI based on preference data
 			configureUIFromPreferences();
 			
@@ -302,8 +322,8 @@ public class ReadmeUI {
 			// Program finishes here when File -> Exit or Close button closes the main window (aka Shell)
 			onExit();
 			
-		} catch (Exception e) {
-			log("Initialization Error", e);
+		} catch (Throwable t) {
+			System.err.println(exceptionAsString(t));
 		}
 	}
 	
@@ -318,7 +338,7 @@ public class ReadmeUI {
 			red = display.getSystemColor(SWT.COLOR_RED);
 
 		// Dialog layout
-			shell.setText("Readme Generator with SWT User Interface (ReadmeUI)");
+			shell.setText(APPLICATION_TITLE);
 			shell.setLayout(new FillLayout());
 			shell.setSize(1000, 800);
 			Rectangle clientArea = shell.getClientArea ();
@@ -426,15 +446,26 @@ public class ReadmeUI {
 		}
 	}
 
+	// Main UI Message Loop - Process UI messages continuously until the UI is closed
 	private static void processUIEventsUntilExit() {
 		while (!shell.isDisposed()) {
-			if (!dispatchUIEvent()) 
-				display.sleep();
+			try {
+				if (!dispatchUIEvent()) 
+					display.sleep();
+			} catch (Throwable e) {
+				showErrorDialog("UI - " + e.getMessage(), e);
+			}
 		}
 	}
 
+	// Process one UI message
 	public static boolean dispatchUIEvent() {
-		return display.readAndDispatch(); 
+		try {
+			return display.readAndDispatch(); 
+		} catch (Throwable e) {
+			showErrorDialog("UI - " + e.getMessage(), e);
+			return false;
+		}
 	}
 
 	private static void onExit() {
@@ -637,7 +668,7 @@ public class ReadmeUI {
 				try {
 					Utils.spawn(helpURL);
 				} catch (IOException e1) {
-					showException("Error showing Online Help", e1);
+					showErrorDialog("Error showing Online Help", e1);
 				}
 			}
 		});
@@ -653,9 +684,9 @@ public class ReadmeUI {
 			public void widgetSelected(SelectionEvent e) {
 				try {
 					Utils.spawn(aboutURL);
-					utils.showMessageBox("About Readme Generator", SWT.ICON_INFORMATION, "For more information, please see the following website:\n\n" + aboutURL + "\n\n Or contact Roberto Enrique Olivares");
+					Utils.showMessageBox("About Readme Generator", SWT.ICON_INFORMATION, "For more information, please see the following website:\n\n" + aboutURL + "\n\n Or contact Roberto Enrique Olivares");
 				} catch (IOException e1) {
-					showException("Error showing Online About Page", e1);
+					showErrorDialog("Error showing Online About Page", e1);
 				}
 			}
 		});
@@ -733,13 +764,15 @@ public class ReadmeUI {
 	
 	public static void createActionLinks(Composite composite) {
 
-		createLink(composite, Utils.linkify("New Readme Wizard... (CTRL+N)"), EventListeners.showNewReadmeWizard);
-
+		createLink(composite, Utils.linkify("Open a Storage Directory... (CTRL+O)"), EventAdapters.fileOpenDirectory);
+		
 		createLink(composite, Utils.linkify("Create a New File... (CTRL+W)"), EventListeners.createNewFileListener);
 
-		createLink(composite, Utils.linkify("Show File in Explorer... (ALT+E)"), EventAdapters.fileShowInExplorer);
+		createLink(composite, Utils.linkify("New Readme Wizard... (CTRL+N)"), EventListeners.showNewReadmeWizard);
 
-		createLink(composite, Utils.linkify("Generate Readme File... (F5)"), EventAdapters.generateReadmeAdapter);
+		createLink(composite, Utils.linkify("Generate Readme Output File... (F5)"), EventAdapters.generateReadmeAdapter);
+
+		createLink(composite, Utils.linkify("Show Selected File in Explorer... (ALT+E)"), EventAdapters.fileShowInExplorer);
 		
 		createLink(composite, Utils.linkify("Copy Output File to Clipboard (CTRL+B)"), EventAdapters.copyFileToClipboardAdapter );
 		
@@ -768,7 +801,7 @@ public class ReadmeUI {
 		labelConfiguration 	= createLabelPair(composite, "Configuration:", 	"");
 		labelOutput 		= createLabelPair(composite, "Output:", 		"");
 		
-		linkHotfixDirectory = createLinkPair(composite,  "Hotfixes:", 		defaultDirectory, EventListeners.hotfixDirectoryLinkage);
+		linkHotfixDirectory = createLinkPair(composite,  "Hotfixes:", 		"", EventListeners.hotfixDirectoryLinkage);
 		
 		sortConfigFilesByModifiedTime = createCheckPair(composite, "Sort Configuration Files by Last Modified", true);
 		sortConfigFilesByModifiedTime.addSelectionListener(new SelectionListener() {
@@ -822,7 +855,7 @@ public class ReadmeUI {
 		
 		// Start a thread to perform sorted directory listing
 		if (Prefs.getSortConfigFilesByModifiedTime())
-			threadedFileReader.startModifiedTimesCalculatorThread(threadedFileReader.KEY_CONFIGS_SORTED_BY_MODIFIED_TIME, workingDirectory + "\\" + configSubdir);
+			threadedFileReader.startModifiedTimesCalculatorThread(ThreadedFileReader.KEY_CONFIGS_SORTED_BY_MODIFIED_TIME, path(workingDirectory, configSubdir));
 		
 		// possibly clear controls and add a loading label??
 		
@@ -1092,7 +1125,7 @@ public class ReadmeUI {
 				link.setText(Utils.linkify(name));
 				link.setFont(expandoFontNormal);
 				//link.setForeground(new Color());
-				link.addListener (SWT.Selection, new FileLinkListener(expandItem, title, directory + "\\" + name, link));
+				link.addListener (SWT.Selection, new FileLinkListener(expandItem, title, path(directory, name), link));
 				linkMaps.get(title).put(name, link);
 			}
 		}
@@ -1110,13 +1143,14 @@ public class ReadmeUI {
 // =====================================================================================================================
 // EXCEPTION MANAGEMENT	
 // =====================================================================================================================
-	public static void showException(String title, Exception e) {
-		String msg = title + "\n\n" + exceptionAsString(e);
-		log(title, e);
-		utils.showMessageBox("Exception Error", SWT.ICON_ERROR, msg);
+	public static void showErrorDialog(String title, Throwable exception) {
+		//String msg = title + "\n\n" + exceptionAsString(exception);
+		log(title, exception);
+		//utils.showMessageBox("Exception Error", SWT.ICON_ERROR, msg);
+		Utils.showErrorDialog("Program Exception Encountered", exception.getMessage(), exception);
 	}
 
-	public static String exceptionAsString(Exception e) {
+	public static String exceptionAsString(Throwable e) {
 		StringWriter sw = new StringWriter();
 		e.printStackTrace(new PrintWriter(sw));
 		return sw.toString();
@@ -1133,7 +1167,7 @@ public class ReadmeUI {
 		log(null, e);
 	}
 	
-	public static void log(String title, Exception e) {
+	public static void log(String title, Throwable e) {
 		// print java stacktrace to console
 		e.printStackTrace();
 		
@@ -1212,8 +1246,8 @@ public class ReadmeUI {
 			if (readmeWizardLastEnteredValues == null) {
 				// If the wizard hasn't failed, or if this is our first time, use the defaults.
 				newReadmeWizard.setValue(NewReadmeWizard.PROJECT_FOLDER_KEY, 	prefs.getDirectory());
-				newReadmeWizard.setValue(NewReadmeWizard.TEMPLATE_PATH_KEY, 	"\\" + templateSubdir + "\\" + prefs.getTemplateFileName());
-				newReadmeWizard.setValue(NewReadmeWizard.COPY_CONFIG_FROM_KEY, 	"\\" + configSubdir + "\\" + defaultConfigFilename);
+				newReadmeWizard.setValue(NewReadmeWizard.TEMPLATE_PATH_KEY, 	path("", templateSubdir, prefs.getTemplateFileName()));
+				newReadmeWizard.setValue(NewReadmeWizard.COPY_CONFIG_FROM_KEY, 	path("", configSubdir, defaultConfigFilename));
 				
 			} else {
 				// Repopulate the last entered values
@@ -1257,7 +1291,7 @@ public class ReadmeUI {
 			}
 			
 		} catch(Exception e) {
-			showException("Error Generating Readme Files from Wizard", e);
+			showErrorDialog("Error Generating Readme Files from Wizard", e);
 		}
 	}
 
@@ -1269,7 +1303,7 @@ public class ReadmeUI {
 			File file = new File(filePath);
 			file.createNewFile();
 		} catch(Exception e) {
-			showException("Error creating new file", e);
+			showErrorDialog("Error creating new file", e);
 		}
 	}	
 	
@@ -1303,7 +1337,7 @@ public class ReadmeUI {
 				msg += path + "\n";
 			}
 			msg += "\nWait again?";
-			int yesno = utils.showMessageBoxYesNo("Waiting on Directories", msg);
+			int yesno = Utils.showMessageBoxYesNo("Waiting on Directories", msg);
 			reader.setEventResult(yesno == SWT.YES);
 		}
 
@@ -1345,8 +1379,10 @@ public class ReadmeUI {
 	 */
 	public static void updateActionInfo() {
 		
-		String titleInfo = "[" + Prefs.getTemplateFileName() + " + " + Prefs.getConfigurationFileName() + " = " + Prefs.getOutputFilename() + "]";
-		shell.setText("Unica Readme Generator - " + titleInfo);
+		String openFilesSummary = "[" + Prefs.getTemplateFileName() + " + " + Prefs.getConfigurationFileName() + " = " + Prefs.getOutputFilename() + "]";
+		
+		// Update Application Title with file info
+		shell.setText(String.format("%s - %s", APPLICATION_TITLE, openFilesSummary));
 
 		/*
 		labelDirectory.setText(Prefs.getDirectory());
@@ -1416,13 +1452,14 @@ public class ReadmeUI {
 			@Override
 			public void widgetSelected(SelectionEvent event) {
 				try {
-					String x = Utils.getDirectoryFromDialog("", Prefs.getDirectory(), shell);
+					String x = Utils.getDirectoryFromDialog("Select a default file storage directory:", Prefs.getDirectory(), shell);
 					if (x.length() == 0 || !Utils.fileExists(x) )
 						return;
 					Prefs.setDirectory(x);
+					Prefs.setHotfixDirectory(path(x, hotfixSubdir));
 					requestFileExpandoUpdate();
 				} catch (Exception e) {
-					showException("Error opening directory", e);
+					showErrorDialog("Error opening directory", e);
 				}
 			}
 		};
@@ -1458,7 +1495,7 @@ public class ReadmeUI {
 						Utils.writeFile(Prefs.getOutputPath(), outputText.getText());
 					}
 				} catch (Exception e) {
-					showException("Error saving file", e);
+					showErrorDialog("Error saving file", e);
 				}
 			}
 		};
@@ -1498,7 +1535,7 @@ public class ReadmeUI {
 					requestFileExpandoUpdate();
 					updateActionInfo();
 				} catch (Exception ex) {
-					showException("Error saving file as...", ex);
+					showErrorDialog("Error saving file as...", ex);
 				}
 			}
 		};
@@ -1526,7 +1563,7 @@ public class ReadmeUI {
 					Utils.spawn("explorer /select,\"" + filePath + "\"");
 					
 				} catch (Exception ex) {
-					showException("Error showing file in explorer", ex);
+					showErrorDialog("Error showing file in explorer", ex);
 				}
 			}
 		};
@@ -1575,7 +1612,7 @@ public class ReadmeUI {
 					
 					commitOpenFilesToMRUFileList();
 				} catch (Exception e1) {
-					showException("Error Generating Readme File", e1);
+					showErrorDialog("Error Generating Readme File", e1);
 				}
 			}
 		};
@@ -1607,10 +1644,10 @@ public class ReadmeUI {
 					// display failures if any
 					String failures = publishTask.getFailures();
 					if (failures != null)
-						utils.showMessageBox("Failure(s) While Publishing Hotfix", SWT.ERROR, failures);
+						Utils.showMessageBox("Failure(s) While Publishing Hotfix", SWT.ERROR, failures);
 										
 				} catch (Exception e1) {
-					showException("Exception Encountered While Publishing Hotfix", e1);
+					showErrorDialog("Exception Encountered While Publishing Hotfix", e1);
 					
 				} finally {
 					setLogToConsoleAsWell(false);
@@ -1784,14 +1821,18 @@ public class ReadmeUI {
 
 /************************************************************************************************************************************
  ************************************************************************************************************************************/
-	
+
+    private static String path(String ... segments) {
+    	return Utils.path(segments);
+    }
+    
 	/** (REO) Opens a file in the UI. Usually called by FileLinkListener objects.
 	 * 
 	 * @param filePath
 	 * @param key		"Configuration", "Template", "Output"
 	 */
 	public static void openFile(String filePath, String key) {
-		try {
+		try {			
 			String text = Utils.readFile(filePath);
 			String fileName = Utils.getFileName(filePath);
 			if (key.equals("Configuration")) {
@@ -1833,7 +1874,7 @@ public class ReadmeUI {
 			}
 			ReadmeUI.updateActionInfo();
 		} catch(Exception e) {
-			ReadmeUI.showException("Error Opening File: " + filePath,e);
+			ReadmeUI.showErrorDialog("Error Opening File: " + filePath,e);
 		}		
 	}
 

@@ -92,7 +92,7 @@ import org.eclipse.swt.widgets.Text;
 			
 			// Show them what's not working in an error dialog
 			if (!msg.equals("")) 
-				ReadmeUI.utils.showMessageBox("Error", SWT.ERROR, "Wizard cannot complete. The following error(s) occurred:\n" + msg); 
+				Utils.showMessageBox("Error", SWT.ERROR, "Wizard cannot complete. The following error(s) occurred:\n" + msg); 
 
 			// Only close the wizard if no errors. They can cancel out if they wish.
 			return msg.equals("");

@@ -10,7 +10,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
-import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
@@ -23,12 +22,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.MultiStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.jface.dialogs.ErrorDialog;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyledText;
 import org.eclipse.swt.widgets.Composite;
@@ -85,7 +87,15 @@ public class Utils {
 		}
 		return null;
 	}
-
+	
+	public static String path(String ... segments) {
+		StringBuffer result = new StringBuffer(512);
+		for (String segment : segments) {
+			result.append(segment).append("\\");
+		}
+		result.deleteCharAt(result.length() - 1);
+		return result.toString();
+	}
 
 	public static String linkify(String x) {
 		String y = "<a href=\"\">" + x + "</a>";
@@ -325,6 +335,7 @@ public class Utils {
 	
 	public static String getDirectoryFromDialog(String title, String startDirectory, Shell shell) {
 		DirectoryDialog dialog = new DirectoryDialog (shell, SWT.SAVE);
+		
 		dialog.setFilterPath (startDirectory);
 		dialog.setText(title);
 		String filenameResult = dialog.open();
@@ -373,10 +384,10 @@ public class Utils {
 		return getDirectoryListing(path, false);
 	}
 
-	public void showMessageBox(final String title, final int swtIcon, final String message) {
+	public static void showMessageBox(final String title, final int swtIcon, final String message) {
 		Display.getDefault().asyncExec(new Runnable() {
 		    public void run() {
-				MessageBox messageBox = new MessageBox(shell, swtIcon | SWT.RESIZE);
+				MessageBox messageBox = new MessageBox(Display.getDefault().getActiveShell(), swtIcon | SWT.RESIZE);
 				messageBox.setText(title);
 				messageBox.setMessage(message);
 				messageBox.open();
@@ -384,14 +395,48 @@ public class Utils {
 		});
 	}
 
+	public static void showErrorDialog(Throwable exception) {
+		showErrorDialog("Program Exception Encountered", exception.getMessage(), exception);
+	}
+	
+	public static void showErrorDialog(final String title, final String message, final Throwable exception) {
+		Display.getDefault().asyncExec(new Runnable() {
+		    public void run() {
+				MultiStatus exceptionStatus = createMultiStatus(exception);
+		    	ErrorDialog.openError(Display.getDefault().getActiveShell(), title, message, exceptionStatus);
+		    }
+		});
+	}
+	
+	public static MultiStatus createMultiStatus(Throwable t) {
+
+		String pluginId = "ReadmeUI";
+        List<Status> childStatuses = new ArrayList<Status>();
+        StackTraceElement[] stackTraces = t.getStackTrace();
+
+        for (StackTraceElement stackTrace : stackTraces) {
+        	String messageLine = stackTrace.toString();
+            Status status = new Status(IStatus.ERROR, pluginId, 0, messageLine, null);
+            childStatuses.add(status);
+        }
+
+        MultiStatus ms = new MultiStatus(
+        		pluginId, 
+        		IStatus.ERROR, 
+        		childStatuses.toArray(new Status[] {}),
+                t.toString(), 
+                t);
+        return ms;		
+	}
+	
 	/**
 	 * @param title
 	 * @param swtIcon
 	 * @param message
 	 * @return SWT.YES or SWT.NO
 	 */
-	public int showMessageBoxYesNo(String title, String message) {
-		MessageBox messageBox = new MessageBox(shell, SWT.ICON_QUESTION | SWT.YES | SWT.NO);
+	public static int showMessageBoxYesNo(String title, String message) {
+		MessageBox messageBox = new MessageBox(Display.getDefault().getActiveShell(), SWT.ICON_QUESTION | SWT.YES | SWT.NO);
 		messageBox.setText(title);
 		messageBox.setMessage(message);
 		return messageBox.open();
@@ -651,7 +696,11 @@ public class Utils {
 	}
 
 	public static void runInUI(Runnable codeSnippet) {
-		Display.getDefault().asyncExec(codeSnippet);
+		try {
+			Display.getDefault().asyncExec(codeSnippet);
+		} catch(Throwable t) {
+			showErrorDialog(t);
+		}
 	}
 	
 	public static void removeAllChildren(Composite composite) {
@@ -662,6 +711,11 @@ public class Utils {
 
 	private static HashMap<String, Object> lastValueMap = new HashMap<String, Object>();
 	
+	/**
+	 * @param key			The key to the category of strings to check in cache - e.g. "Configuration" or "Templates"
+	 * @param latestValue	The latest set of strings for the category
+	 * @return				True if any of the strings have changed across the previous call
+	 */
 	public static boolean differsFromLast(String key, String[] latestValue) {
 		boolean keyExisted = lastValueMap.containsKey(key);
 		
@@ -678,7 +732,7 @@ public class Utils {
 		if (oneNull)
 			return true;
 		
-		boolean lengthMismatch = latestValue.length != latestValue.length;
+		boolean lengthMismatch = lastValue.length != latestValue.length;
 		if (lengthMismatch) 
 			return true;
 		
